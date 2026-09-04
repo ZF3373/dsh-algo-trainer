@@ -21,6 +21,7 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
     "client": "client/index.ts"
   },
   "peerDependencies": {
