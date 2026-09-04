@@ -1,0 +1,14 @@
+# cordis.patch.yml — dsh-icpc-workbench 插件挂载行
+#
+# 在 dsh profile 的 cordis.patch.yml 中添加此行即可挂载插件。
+
+- insert:
+    - id: icpc-workbench
+      name: 'dsh-icpc-workbench'
+      config:
+        dataDir: ''
+        ai:
+          enabled: false
+          baseURL: 'https://api.deepseek.com/v1'
+          apiKey: ''
+          model: 'deepseek-chat'

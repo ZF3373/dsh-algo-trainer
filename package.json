@@ -1,0 +1,36 @@
+{
+  "name": "dsh-icpc-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "ICPC competitive programming training tools for DeepSeek Harness — sync, analysis, plans, reviews, templates",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./client": {
+      "types": "./client/index.ts",
+      "default": "./client/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:client": "tsc --noEmit -p tsconfig.client.json",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "dsh": {
+    "client": "client/index.ts"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "~6.0.2"
+  }
+}
