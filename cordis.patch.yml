@@ -1,10 +1,10 @@
-# cordis.patch.yml — dsh-icpc-workbench 插件挂载行
+# cordis.patch.yml — dsh-algo-trainer 插件挂载行
 #
 # 在 dsh profile 的 cordis.patch.yml 中添加此行即可挂载插件。
 
 - insert:
-    - id: icpc-workbench
-      name: 'dsh-icpc-workbench'
+    - id: algo-trainer
+      name: 'dsh-algo-trainer'
       config:
         dataDir: ''
         ai:

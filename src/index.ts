@@ -1,5 +1,5 @@
 /**
- * dsh-icpc-workbench — ICPC 竞赛编程训练插件 for DeepSeek Harness
+ * dsh-algo-trainer — 算法学习训练插件 for DeepSeek Harness
  *
  * Host 半边：注册 10 个 agent tools（icpc_ 前缀）+ RPC 方法供 client 面板拉数据。
  * 数据层用 JSON 文件持久化（替代 SQLite），通过 dsh fs 服务落盘到 workspace 目录。
@@ -24,7 +24,7 @@ import { registerSettingsTool } from './tools/settings.ts'
 import { registerImportTool } from './tools/import.ts'
 import { registerRpcHandlers } from './rpc/index.ts'
 
-export const name = 'dsh-icpc-workbench'
+export const name = 'dsh-algo-trainer'
 export const inject = ['tools', 'fs', 'rpc']
 export { Config }
 

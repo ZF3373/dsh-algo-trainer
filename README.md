@@ -1,6 +1,6 @@
-# dsh-icpc-workbench
+# dsh-algo-trainer
 
-ICPC 竞赛编程训练台 — DeepSeek Harness 插件。
+算法学习训练台 — DeepSeek Harness 插件。
 
 将 [icpc-workbench](https://github.com/ZF3373/icpc-workbench) 的核心训练能力（刷题同步、弱项分析、今日推荐、训练计划、间隔复习、模板库、赛事中心、打卡）封装为 dsh agent 工具，让 AI agent 能直接帮选手完成训练全流程。
 
@@ -20,8 +20,8 @@ ICPC 竞赛编程训练台 — DeepSeek Harness 插件。
 ## 目录结构
 
 ```
-dsh-icpc-workbench/
-├── package.json              # dsh 插件包定义（dsh.client 指向 client/）
+dsh-algo-trainer/
+├── package.json              # dsh 插件包定义（dsh.bundle + dsh.client）
 ├── tsconfig.json             # host 侧 tsconfig
 ├── tsconfig.client.json      # client 侧 tsconfig
 ├── cordis.patch.yml          # dsh 配置补丁行
@@ -74,10 +74,10 @@ dsh-icpc-workbench/
 
 ```bash
 # 在 dsh profile 中添加
-dsh plugin --profile web add dsh-icpc-workbench
+dsh plugin --profile web add dsh-algo-trainer
 
 # 或从源码
-cd dsh-icpc-workbench
+cd dsh-algo-trainer
 npm install
 ```
 
@@ -86,8 +86,8 @@ npm install
 ```yaml
 # cordis.patch.yml
 - insert:
-    - id: icpc-workbench
-      name: 'dsh-icpc-workbench'
+    - id: algo-trainer
+      name: 'dsh-algo-trainer'
       config:
         dataDir: ''           # 数据目录，留空则用 workspace/.icpc-data/
         ai:
@@ -134,7 +134,7 @@ npx tsx --test tests/**/*.test.ts
 
 ## dsh 插件契约
 
-- **`name`**: `'dsh-icpc-workbench'`
+- **`name`**: `'dsh-algo-trainer'`
 - **`inject`**: `['tools', 'fs', 'rpc']` — 等待三个 dsh 服务就绪后挂载
 - **`apply(ctx, config)`**: 加载 JSON 存储 → 初始化 CF/AtCoder 适配器 → 注册 10 个工具 + 3 个 RPC 方法 → `ctx.effect()` 注册 dispose 落盘
 - **`Config`**: Schemastery 兼容 schema（dataDir / ai）
