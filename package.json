@@ -5,23 +5,28 @@
   "license": "MIT",
   "type": "module",
   "description": "ICPC competitive programming training tools for DeepSeek Harness — sync, analysis, plans, reviews, templates",
+  "main": "./lib/index.mjs",
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "default": "./lib/index.mjs"
     },
     "./client": {
       "types": "./client/index.ts",
-      "default": "./client/index.ts"
+      "default": "./lib/client.mjs"
     }
   },
+  "files": ["lib", "cordis.patch.yml", "src/ai/plan-prompt.md"],
   "scripts": {
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "typecheck:client": "tsc --noEmit -p tsconfig.client.json",
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": "client/index.ts"
   },
   "peerDependencies": {
@@ -31,6 +36,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
+    "tsdown": "^0.23.0",
     "tsx": "^4.19.2",
     "typescript": "~6.0.2"
   }

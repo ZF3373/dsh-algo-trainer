@@ -4,3 +4,4 @@ dist/
 !*.config.js
 *.d.ts
 .icpc-data/
+lib/
