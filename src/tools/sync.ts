@@ -3,6 +3,7 @@ import type { IcpcHost } from '../index.ts'
 import type { Context, ToolDefinition } from '../dsh-compat.ts'
 import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT } from './helpers.ts'
+import { syncPlatform } from './sync-helpers.ts'
 
 export function registerSyncTool(host: IcpcHost, ctx: Context): void {
   ctx.tools.register(defineTool({
@@ -23,40 +24,19 @@ export function registerSyncTool(host: IcpcHost, ctx: Context): void {
     },
     output: { schema: ANY_OUTPUT, render: (_a, v) => textOutput(v) },
     async execute(args) {
-      const { store, adapters } = host
+      const { store } = host
       const platform = args.platform as string
 
       if (platform === 'all') {
-        const handles = store.getSettings().handles
+        const settings = store.getSettings()
         const results = []
-        for (const [pf, handle] of Object.entries(handles)) {
-          if (!handle) continue
-          const adapter = adapters[pf]
-          if (!adapter) continue
-          const known = store.getKnownExternalIds(pf as PlatformId)
-          const subs = await adapter.fetchUserSubmissions(handle, { knownExternalIds: known })
-          const result = store.insertSubmissions(
-            subs.map((s) => ({
-              platform: s.problem.platform,
-              problemKey: s.problem.problemKey,
-              verdict: s.verdict,
-              language: s.language,
-              submittedAt: s.submittedAt,
-              externalId: s.externalId,
-            })),
-          )
-          // upsert problem metadata
-          for (const s of subs) {
-            store.upsertProblem({
-              platform: s.problem.platform,
-              problemKey: s.problem.problemKey,
-              title: s.problem.title,
-              difficulty: s.problem.difficulty ?? null,
-              url: s.problem.url ?? null,
-              tags: s.problem.tags,
-            })
-          }
-          results.push({ platform: pf, handle, ...result })
+        for (const [pf, account] of Object.entries(settings.accounts)) {
+          if (!account?.handle || !account.enabled) continue
+          const r = await syncPlatform(host, pf as PlatformId, account.handle)
+          results.push({ ...r, durationMs: 0 })
+        }
+        if (results.length === 0) {
+          return { ok: false, error: '没有已绑定的启用账号，请先通过 icpc_settings 绑定平台账号' }
         }
         return { ok: true, results }
       }
@@ -69,30 +49,8 @@ export function registerSyncTool(host: IcpcHost, ctx: Context): void {
       if (!handle) handle = store.getHandle(platform) ?? ''
       if (!handle) return { ok: false, error: `未提供 handle 且没有已绑定的 ${platform} 账号` }
 
-      const adapter = adapters[platform]
-      const known = store.getKnownExternalIds(platform)
-      const subs = await adapter.fetchUserSubmissions(handle, { knownExternalIds: known })
-      const result = store.insertSubmissions(
-        subs.map((s) => ({
-          platform: s.problem.platform,
-          problemKey: s.problem.problemKey,
-          verdict: s.verdict,
-          language: s.language,
-          submittedAt: s.submittedAt,
-          externalId: s.externalId,
-        })),
-      )
-      for (const s of subs) {
-        store.upsertProblem({
-          platform: s.problem.platform,
-          problemKey: s.problem.problemKey,
-          title: s.problem.title,
-          difficulty: s.problem.difficulty ?? null,
-          url: s.problem.url ?? null,
-          tags: s.problem.tags,
-        })
-      }
-      return { ok: true, handle, ...result }
+      const result = await syncPlatform(host, platform, handle)
+      return { ok: true, result }
     },
     presentCall: (args) => ({ card: 'generic', title: `同步 ${args.platform}` }),
   }))

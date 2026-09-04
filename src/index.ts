@@ -1,7 +1,7 @@
 /**
  * dsh-algo-trainer — 算法学习训练插件 for DeepSeek Harness
  *
- * Host 半边：注册 10 个 agent tools（icpc_ 前缀）+ RPC 方法供 client 面板拉数据。
+ * Host 半边：注册 12 个 agent tools + RPC 方法供 client 面板拉数据。
  * 数据层用 JSON 文件持久化（替代 SQLite），通过 dsh fs 服务落盘到 workspace 目录。
  * 适配层用 fetch 调公开 API（Codeforces + AtCoder）。
  */
@@ -22,6 +22,8 @@ import { registerContestTool } from './tools/contests.ts'
 import { registerCheckinTool } from './tools/checkins.ts'
 import { registerSettingsTool } from './tools/settings.ts'
 import { registerImportTool } from './tools/import.ts'
+import { registerProblemTool } from './tools/problems.ts'
+import { registerExportTool } from './tools/export.ts'
 import { registerRpcHandlers } from './rpc/index.ts'
 
 export const name = 'dsh-algo-trainer'
@@ -38,11 +40,9 @@ export function apply(ctx: Context, rawConfig: Partial<PluginConfig> = {}): void
   const config = resolveConfig(rawConfig)
   const dataDir = config.dataDir || '.icpc-data'
 
-  // 初始化 JSON 存储
   const store = new IcpcStore(ctx.fs, dataDir)
   void store.load()
 
-  // 初始化适配器
   const adapters: Record<string, PlatformAdapter & ContestAdapter> = {
     codeforces: createCodeforcesAdapter(),
     atcoder: createAtcoderAdapter(),
@@ -60,12 +60,9 @@ export function apply(ctx: Context, rawConfig: Partial<PluginConfig> = {}): void
 
   const host: IcpcHost = { store, adapters, getAiConfig }
 
-  // dispose 时落盘
-  ctx.effect(() => () => {
-    void store.flush()
-  })
+  ctx.effect(() => () => { void store.flush() })
 
-  // 注册 agent tools
+  // 注册 agent tools（12 个）
   registerSyncTool(host, ctx)
   registerStatsTool(host, ctx)
   registerTodayTool(host, ctx)
@@ -76,6 +73,8 @@ export function apply(ctx: Context, rawConfig: Partial<PluginConfig> = {}): void
   registerCheckinTool(host, ctx)
   registerSettingsTool(host, ctx)
   registerImportTool(host, ctx)
+  registerProblemTool(host, ctx)
+  registerExportTool(host, ctx)
 
   // 注册 RPC 方法供 client 面板调用
   registerRpcHandlers(host, ctx)

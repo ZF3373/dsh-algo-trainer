@@ -63,25 +63,58 @@ export interface TemplateProgressRecord {
   templateId: string
   status: 'todo' | 'learning' | 'mastered'
   note: string | null
+  code: string | null
+  idea: string | null
+  complexity: string | null
+  url: string | null
+  masteredAt: string | null
+}
+
+export interface CustomTemplateRecord {
+  id: number
+  categoryKey: string
+  name: string
+  difficulty: number
+  tags: string[]
+  code: string
+  idea: string | null
+  complexity: string | null
+  url: string | null
+  createdAt: string
+  updatedAt: string | null
+}
+
+export interface PlatformAccountRecord {
+  platform: PlatformId
+  handle: string
+  lastSyncAt: string | null
+  enabled: boolean
 }
 
 export interface SettingsRecord {
-  handles: Partial<Record<PlatformId, string>>
+  accounts: Partial<Record<PlatformId, PlatformAccountRecord>>
   ai: {
     enabled: boolean
     baseURL: string
     apiKey: string
     model: string
   }
+  adapterEnabled: Partial<Record<PlatformId, boolean>>
+  cookies: Partial<Record<PlatformId, { cookie?: string; csrf?: string }>>
+  reminder: {
+    enabled: boolean
+    time: string
+  }
 }
 
-/** 全部存储状态（一个 JSON 文件或拆成多个） */
+/** 全部存储状态（一个 JSON 文件） */
 export interface StoreState {
   problems: ProblemRecord[]
   submissions: SubmissionRecord[]
   plans: PlanRecord[]
   reviews: ReviewRecord[]
   templateProgress: TemplateProgressRecord[]
+  customTemplates: CustomTemplateRecord[]
   settings: SettingsRecord
 }
 
@@ -92,14 +125,18 @@ export function defaultState(): StoreState {
     plans: [],
     reviews: [],
     templateProgress: [],
+    customTemplates: [],
     settings: {
-      handles: {},
+      accounts: {},
       ai: {
         enabled: false,
         baseURL: 'https://api.deepseek.com/v1',
         apiKey: '',
         model: 'deepseek-chat',
       },
+      adapterEnabled: {},
+      cookies: {},
+      reminder: { enabled: false, time: '20:00' },
     },
   }
 }

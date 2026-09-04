@@ -1,9 +1,6 @@
 /**
  * JSON 存储引擎：内存索引 + 落盘（替代 SQLite）。
- *
- * 启动时从 workspace 目录加载 JSON 状态文件到内存，
- * 所有查询走内存 Map/Array（无 SQL），变更后防抖写盘。
- * 供分析引擎、工具层、RPC 共用——store 是唯一的数据入口。
+ * 所有查询走内存 Map/Array，变更后防抖写盘。
  */
 
 import type { FsService } from '../dsh-compat.ts'
@@ -15,6 +12,7 @@ import type {
   PlanTaskRecord,
   ReviewRecord,
   TemplateProgressRecord,
+  CustomTemplateRecord,
   SettingsRecord,
   StoreState,
 } from './schema.ts'
@@ -23,7 +21,6 @@ import { defaultState } from './schema.ts'
 const STATE_FILE = 'icpc-state.json'
 const SAVE_DEBOUNCE_MS = 500
 
-/** join problems + submissions 后的行（供分析引擎用，等价于原 SQL fetchRows） */
 export interface SubmissionRow {
   platform: PlatformId
   verdict: string
@@ -47,13 +44,13 @@ export class IcpcStore {
   private nextPlanId = 1
   private nextReviewId = 1
   private nextTaskId = 1
+  private nextCustomId = 1
 
   constructor(fs: FsService, dataDir: string) {
     this.fs = fs
     this.dataDir = dataDir
   }
 
-  /** 从磁盘加载状态（文件不存在时初始化空状态） */
   async load(): Promise<void> {
     try {
       const filePath = `${this.dataDir}/${STATE_FILE}`
@@ -61,11 +58,16 @@ export class IcpcStore {
       if (exists) {
         const raw = await this.fs.readFile(filePath)
         this.state = { ...defaultState(), ...JSON.parse(raw) }
+        // 向前兼容：确保新字段存在
+        if (!this.state.customTemplates) this.state.customTemplates = []
+        if (!this.state.settings.adapterEnabled) this.state.settings.adapterEnabled = {}
+        if (!this.state.settings.cookies) this.state.settings.cookies = {}
+        if (!this.state.settings.reminder) this.state.settings.reminder = { enabled: false, time: '20:00' }
+        if (!this.state.settings.accounts) this.state.settings.accounts = {}
       }
     } catch (e) {
       console.warn(`[icpc-store] load failed, starting fresh: ${(e as Error).message}`)
     }
-    // 重建自增 ID
     for (const p of this.state.plans) {
       if (p.id >= this.nextPlanId) this.nextPlanId = p.id + 1
       for (const t of p.tasks) {
@@ -75,22 +77,20 @@ export class IcpcStore {
     for (const r of this.state.reviews) {
       if (r.id >= this.nextReviewId) this.nextReviewId = r.id + 1
     }
+    for (const c of this.state.customTemplates) {
+      if (c.id >= this.nextCustomId) this.nextCustomId = c.id + 1
+    }
   }
 
-  /** 防抖落盘 */
   scheduleSave(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = setTimeout(() => void this.flush(), SAVE_DEBOUNCE_MS)
   }
 
-  /** 立即写盘（dispose 时调用） */
   async flush(): Promise<void> {
     try {
       await this.fs.mkdir(this.dataDir)
-      await this.fs.writeFile(
-        `${this.dataDir}/${STATE_FILE}`,
-        JSON.stringify(this.state, null, 2),
-      )
+      await this.fs.writeFile(`${this.dataDir}/${STATE_FILE}`, JSON.stringify(this.state, null, 2))
     } catch (e) {
       console.error(`[icpc-store] flush failed: ${(e as Error).message}`)
     }
@@ -102,27 +102,73 @@ export class IcpcStore {
     return this.state.settings
   }
 
-  /** 库中已有的提交号集合（供适配器增量终止用） */
-  getKnownExternalIds(platform?: PlatformId): Set<string> {
-    return new Set(
-      this.state.submissions
-        .filter((s) => !platform || s.platform === platform)
-        .map((s) => s.externalId),
-    )
-  }
-
   updateSettings(patch: Partial<SettingsRecord>): void {
-    if (patch.handles) {
-      this.state.settings.handles = { ...this.state.settings.handles, ...patch.handles }
-    }
-    if (patch.ai) {
-      this.state.settings.ai = { ...this.state.settings.ai, ...patch.ai }
-    }
+    if (patch.ai) this.state.settings.ai = { ...this.state.settings.ai, ...patch.ai }
+    if (patch.adapterEnabled) this.state.settings.adapterEnabled = { ...this.state.settings.adapterEnabled, ...patch.adapterEnabled }
+    if (patch.cookies) this.state.settings.cookies = { ...this.state.settings.cookies, ...patch.cookies }
+    if (patch.reminder) this.state.settings.reminder = { ...this.state.settings.reminder, ...patch.reminder }
     this.scheduleSave()
   }
 
   getHandle(platform: PlatformId): string | undefined {
-    return this.state.settings.handles[platform]
+    return this.state.settings.accounts[platform]?.handle
+  }
+
+  getAccount(platform: PlatformId): { handle: string; lastSyncAt: string | null; enabled: boolean } | undefined {
+    const a = this.state.settings.accounts[platform]
+    return a ? { handle: a.handle, lastSyncAt: a.lastSyncAt, enabled: a.enabled } : undefined
+  }
+
+  setAccount(platform: PlatformId, handle: string): void {
+    const existing = this.state.settings.accounts[platform]
+    this.state.settings.accounts[platform] = {
+      platform, handle,
+      // 换 handle 时重置 lastSyncAt（下次同步全量重拉）
+      lastSyncAt: existing && existing.handle === handle ? existing.lastSyncAt : null,
+      enabled: true,
+    }
+    this.scheduleSave()
+  }
+
+  setAccountSyncTime(platform: PlatformId, time: string): void {
+    const a = this.state.settings.accounts[platform]
+    if (a) { a.lastSyncAt = time; this.scheduleSave() }
+  }
+
+  setAdapterEnabled(platform: PlatformId, enabled: boolean): void {
+    this.state.settings.adapterEnabled[platform] = enabled
+    this.scheduleSave()
+  }
+
+  getAdapterEnabled(platform: PlatformId): boolean {
+    return this.state.settings.adapterEnabled[platform] !== false
+  }
+
+  setCookie(platform: PlatformId, cookie?: string, csrf?: string): void {
+    if (!this.state.settings.cookies[platform]) this.state.settings.cookies[platform] = {}
+    if (cookie !== undefined) {
+      if (cookie === '') delete this.state.settings.cookies[platform]!.cookie
+      else this.state.settings.cookies[platform]!.cookie = cookie
+    }
+    if (csrf !== undefined) {
+      if (csrf === '') delete this.state.settings.cookies[platform]!.csrf
+      else this.state.settings.cookies[platform]!.csrf = csrf
+    }
+    // 清理空对象
+    if (this.state.settings.cookies[platform] && Object.keys(this.state.settings.cookies[platform]!).length === 0) {
+      delete this.state.settings.cookies[platform]
+    }
+    this.scheduleSave()
+  }
+
+  getCookie(platform: PlatformId): { cookie?: string; csrf?: string } | undefined {
+    return this.state.settings.cookies[platform]
+  }
+
+  setReminder(enabled?: boolean, time?: string): void {
+    if (enabled !== undefined) this.state.settings.reminder.enabled = enabled
+    if (time !== undefined) this.state.settings.reminder.time = time
+    this.scheduleSave()
   }
 
   // ---------- Problems ----------
@@ -143,10 +189,90 @@ export class IcpcStore {
     this.scheduleSave()
   }
 
+  /** 批量 upsert 题库题（不产生提交），difficulty 保留已有值（COALESCE），tags 仅非空时覆盖 */
+  upsertBankProblems(rows: ProblemRecord[]): Array<{ platform: PlatformId; inserted: number; updated: number }> {
+    const byPlatform = new Map<PlatformId, ProblemRecord[]>()
+    for (const r of rows) {
+      const list = byPlatform.get(r.platform) ?? []
+      list.push(r)
+      byPlatform.set(r.platform, list)
+    }
+    const result: Array<{ platform: PlatformId; inserted: number; updated: number }> = []
+    for (const [platform, items] of byPlatform) {
+      let existed = 0
+      for (const r of items) {
+        const existing = this.findProblem(platform, r.problemKey)
+        if (existing) {
+          existed++
+          this.upsertProblem({
+            ...existing,
+            title: r.title || existing.title,
+            difficulty: existing.difficulty ?? r.difficulty,
+            url: r.url ?? existing.url,
+            tags: r.tags.length > 0 ? r.tags : existing.tags,
+          })
+        } else {
+          this.state.problems.push(r)
+        }
+      }
+      const uniqueKeys = new Set(items.map((r) => r.problemKey)).size
+      const inserted = Math.max(0, uniqueKeys - existed)
+      result.push({ platform, inserted, updated: uniqueKeys - inserted })
+    }
+    this.scheduleSave()
+    return result
+  }
+
   findProblem(platform: PlatformId, problemKey: string): ProblemRecord | undefined {
     return this.state.problems.find(
       (p) => p.platform === platform && p.problemKey === problemKey,
     )
+  }
+
+  /** 浏览题目：支持 platform/difficulty/tag/q 关键词过滤，bank=1 包含未做题 */
+  browseProblems(opts: {
+    platform?: PlatformId
+    difficulty?: string
+    tag?: string
+    q?: string
+    bank?: boolean
+    limit?: number
+  } = {}): Array<ProblemRecord & { attempts: number; acCount: number; lastAcAt: string | null; status: string }> {
+    const acKeys = this.getAcKeys()
+    const limit = opts.limit ?? 300
+    let rows = this.state.problems
+      .map((p) => {
+        const subs = this.state.submissions.filter(
+          (s) => s.platform === p.platform && s.problemKey === p.problemKey,
+        )
+        const acCount = subs.filter((s) => s.verdict === 'AC').length
+        const lastAcAt = subs.filter((s) => s.verdict === 'AC').map((s) => s.submittedAt).sort().pop() ?? null
+        return {
+          ...p,
+          attempts: subs.length,
+          acCount,
+          lastAcAt,
+          status: acCount > 0 ? 'ac' : subs.length > 0 ? 'tried' : 'none',
+        }
+      })
+    if (!opts.bank) {
+      rows = rows.filter((r) => r.attempts > 0)
+    }
+    if (opts.platform) {
+      rows = rows.filter((r) => r.platform === opts.platform)
+    }
+    if (opts.q && opts.q.trim()) {
+      const q = opts.q.trim()
+      rows = rows.filter((r) => r.title.includes(q) || r.problemKey.includes(q))
+    }
+    rows = rows.sort((a, b) => (b.difficulty ?? -1) - (a.difficulty ?? -1))
+    if (opts.difficulty) {
+      rows = rows.filter((r) => bucketForDifficulty(r.difficulty) === opts.difficulty)
+    }
+    if (opts.tag) {
+      rows = rows.filter((r) => r.tags.includes(opts.tag!))
+    }
+    return rows.slice(0, limit)
   }
 
   // ---------- Submissions ----------
@@ -162,7 +288,6 @@ export class IcpcStore {
       }
       existing.add(s.externalId)
       this.state.submissions.push(s)
-      // 同时 upsert problem
       this.upsertProblem({
         platform: s.platform,
         problemKey: s.problemKey,
@@ -177,7 +302,14 @@ export class IcpcStore {
     return { imported, skipped }
   }
 
-  /** 提交 + 题目 join（等价于 SQL fetchRows），供分析引擎用 */
+  getKnownExternalIds(platform?: PlatformId): Set<string> {
+    return new Set(
+      this.state.submissions
+        .filter((s) => !platform || s.platform === platform)
+        .map((s) => s.externalId),
+    )
+  }
+
   getSubmissionRows(filter: StatsFilter = {}): SubmissionRow[] {
     const problemMap = new Map(
       this.state.problems.map((p) => [`${p.platform}:${p.problemKey}`, p]),
@@ -202,7 +334,6 @@ export class IcpcStore {
       })
   }
 
-  /** 已 AC 的题目 key 集合 */
   getAcKeys(): Set<string> {
     const set = new Set<string>()
     for (const s of this.state.submissions) {
@@ -211,7 +342,6 @@ export class IcpcStore {
     return set
   }
 
-  /** 近期 AC 难度列表（按时间降序） */
   getRecentAcDifficulties(since: string): number[] {
     const acKeys = this.getAcKeys()
     const problemMap = new Map(
@@ -230,7 +360,6 @@ export class IcpcStore {
     return diffs
   }
 
-  /** 所有有难度、未 AC 的题（今日训练候选） */
   getUnsolvedCandidates(): Array<ProblemRecord & { id: number }> {
     const acKeys = this.getAcKeys()
     return this.state.problems
@@ -309,7 +438,6 @@ export class IcpcStore {
     this.scheduleSave()
   }
 
-  /** 某天的任务列表 */
   getTasksByDate(date: string): PlanTaskRecord[] {
     const tasks: PlanTaskRecord[] = []
     for (const plan of this.state.plans) {
@@ -320,7 +448,6 @@ export class IcpcStore {
     return tasks
   }
 
-  /** 月视图：某月每日任务数与打卡数 */
   getMonthView(month: string): Array<{ date: string; total: number; checked: number }> {
     const byDate = new Map<string, { total: number; checked: number }>()
     for (const plan of this.state.plans) {
@@ -333,12 +460,9 @@ export class IcpcStore {
         }
       }
     }
-    return [...byDate.entries()]
-      .map(([date, v]) => ({ date, ...v }))
-      .sort((a, b) => a.date.localeCompare(b.date))
+    return [...byDate.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
   }
 
-  /** 连续打卡天数 */
   getStreak(todayStr: string): { current: number; longest: number; totalDays: number } {
     const dates = new Set<string>()
     for (const plan of this.state.plans) {
@@ -347,8 +471,7 @@ export class IcpcStore {
       }
     }
     if (dates.size === 0) return { current: 0, longest: 0, totalDays: 0 }
-    const toDayNum = (s: string): number =>
-      Number(new Date(`${s}T00:00:00Z`).getTime() / 86_400_000) | 0
+    const toDayNum = (s: string): number => Number(new Date(`${s}T00:00:00Z`).getTime() / 86_400_000) | 0
     const days = [...dates].map(toDayNum).sort((a, b) => a - b)
     let longest = 1
     let run = 1
@@ -360,10 +483,7 @@ export class IcpcStore {
     const set = new Set(days)
     let cursor = set.has(today) ? today : today - 1
     let current = 0
-    while (set.has(cursor)) {
-      current++
-      cursor--
-    }
+    while (set.has(cursor)) { current++; cursor-- }
     return { current, longest, totalDays: days.length }
   }
 
@@ -441,6 +561,11 @@ export class IcpcStore {
         templateId,
         status: 'todo',
         note: null,
+        code: null,
+        idea: null,
+        complexity: null,
+        url: null,
+        masteredAt: null,
         ...patch,
       })
     }
@@ -450,4 +575,74 @@ export class IcpcStore {
   getAllProgress(): Map<string, TemplateProgressRecord> {
     return new Map(this.state.templateProgress.map((t) => [t.templateId, t]))
   }
+
+  // ---------- Custom Templates ----------
+
+  createCustomTemplate(input: Omit<CustomTemplateRecord, 'id' | 'createdAt' | 'updatedAt'>): CustomTemplateRecord {
+    const record: CustomTemplateRecord = {
+      ...input,
+      id: this.nextCustomId++,
+      createdAt: new Date().toISOString(),
+      updatedAt: null,
+    }
+    this.state.customTemplates.push(record)
+    this.scheduleSave()
+    return record
+  }
+
+  getCustomTemplate(id: number): CustomTemplateRecord | undefined {
+    return this.state.customTemplates.find((c) => c.id === id)
+  }
+
+  updateCustomTemplate(id: number, patch: Partial<CustomTemplateRecord>): boolean {
+    const c = this.getCustomTemplate(id)
+    if (!c) return false
+    Object.assign(c, patch)
+    c.updatedAt = new Date().toISOString()
+    this.scheduleSave()
+    return true
+  }
+
+  deleteCustomTemplate(id: number): boolean {
+    const idx = this.state.customTemplates.findIndex((c) => c.id === id)
+    if (idx < 0) return false
+    this.state.customTemplates.splice(idx, 1)
+    // 清理学习进度
+    this.state.templateProgress = this.state.templateProgress.filter(
+      (t) => t.templateId !== `c-${id}`,
+    )
+    this.scheduleSave()
+    return true
+  }
+
+  listCustomTemplates(): CustomTemplateRecord[] {
+    return [...this.state.customTemplates].sort((a, b) => a.id - b.id)
+  }
+
+  /** 例题练习状态：是否已入库、是否已 AC */
+  loadExampleStatus(pairs: Array<{ platform: string; key: string }>): Map<string, { inBank: boolean; ac: boolean }> {
+    const acKeys = this.getAcKeys()
+    const problemKeys = new Set(this.state.problems.map((p) => `${p.platform}:${p.problemKey}`))
+    const map = new Map<string, { inBank: boolean; ac: boolean }>()
+    for (const { platform, key } of pairs) {
+      const k = `${platform}:${key}`
+      map.set(k, {
+        inBank: problemKeys.has(k),
+        ac: acKeys.has(k),
+      })
+    }
+    return map
+  }
+}
+
+// ---------- Helpers (also used by analysis) ----------
+
+export function bucketForDifficulty(difficulty: number | null | undefined): string {
+  if (difficulty === null || difficulty === undefined || !Number.isFinite(difficulty)) return '未知'
+  const bounds = [1200, 1400, 1600, 1900, 2200]
+  const labels = ['<1200', '1200-1399', '1400-1599', '1600-1899', '1900-2199', '2200+']
+  for (let i = 0; i < bounds.length; i++) {
+    if (difficulty < bounds[i]) return labels[i]
+  }
+  return labels[labels.length - 1]
 }
