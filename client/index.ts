@@ -1,5 +1,11 @@
 import { createElement } from 'react'
-import { HeaderAction, WorkbenchPanel } from './WorkbenchPanel.tsx'
+import {
+  createBetterSidebarDescriptor,
+  createConversationInputActions,
+  openBetterSidebarTab,
+  type BetterSidebarServiceLike,
+} from './betterSidebar.ts'
+import { HeaderAction, WorkbenchGlyph, WorkbenchPanel } from './WorkbenchPanel.tsx'
 
 export const inject = ['slots', 'sidebarRight', 'sidebarRightTabs']
 export const name = 'dsh-algo-trainer'
@@ -25,28 +31,24 @@ interface ClientCtx {
   slots: SlotsLike
   sidebarRight: SidebarRightLike
   sidebarRightTabs: SidebarRightTabsLike
-  effect(fn: () => void | (() => void)): void
+  get?(name: string): unknown
+  inject?(names: string[], cb: (ctx: ClientCtx) => void): unknown
+  effect(fn: () => void | (() => void)): () => void
 }
 
 export function apply(ctx: ClientCtx): void {
-  ctx.effect(() => ctx.sidebarRightTabs.register({
-    id: TAB_ID,
-    kind: TAB_KIND,
-    title: () => 'ICPC Workbench',
-  }))
-
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
-    ctx.slots.register(
-      {
-        name: 'sidebar.right.pane.tab',
-        key: TAB_ID,
-        inject: () => ({
-          collapseSidebar: () => ctx.sidebarRight.toggleExpanded(),
-        }),
-      },
-      WorkbenchPanel,
-    ),
-  ))
+  const betterSidebar = ctx.get?.('betterSidebar') as BetterSidebarServiceLike | undefined
+  if (betterSidebar) {
+    registerBetterSidebar(ctx, betterSidebar)
+  } else {
+    const disposeNative = registerNativeSidebar(ctx)
+    ctx.inject?.(['betterSidebar'], (injectedCtx) => {
+      const service = injectedCtx.get?.('betterSidebar') as BetterSidebarServiceLike | undefined
+      if (!service) return
+      disposeNative()
+      registerBetterSidebar(injectedCtx, service)
+    })
+  }
 
   ctx.effect(() => ctx.slots.inject('conversation.session.header.actions', () =>
     ctx.slots.register(
@@ -54,8 +56,15 @@ export function apply(ctx: ClientCtx): void {
         name: 'conversation.session.header.actions',
         id: `${name}.open`,
         order: 80,
-        inject: () => ({
-          open: () => ctx.sidebarRight.openTab(TAB_KIND),
+        inject: (sessionId?: string) => ({
+          open: () => {
+            const service = ctx.get?.('betterSidebar') as BetterSidebarServiceLike | undefined
+            if (service && typeof sessionId === 'string') {
+              openBetterSidebarTab(service, sessionId)
+              return
+            }
+            ctx.sidebarRight.openTab(TAB_KIND)
+          },
         }),
       },
       HeaderAction,
@@ -73,6 +82,48 @@ export function apply(ctx: ClientCtx): void {
       SettingsPanel,
     ),
   ))
+}
+
+function registerNativeSidebar(ctx: ClientCtx): () => void {
+  const disposers: Array<() => void> = []
+  disposers.push(ctx.effect(() => ctx.sidebarRightTabs.register({
+    id: TAB_ID,
+    kind: TAB_KIND,
+    title: () => 'ICPC Workbench',
+  })))
+  disposers.push(ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
+    ctx.slots.register(
+      {
+        name: 'sidebar.right.pane.tab',
+        key: TAB_ID,
+        inject: () => ({
+          collapseSidebar: () => ctx.sidebarRight.toggleExpanded(),
+        }),
+      },
+      WorkbenchPanel,
+    ),
+  )))
+  return () => {
+    while (disposers.length > 0) disposers.pop()?.()
+  }
+}
+
+function registerBetterSidebar(ctx: ClientCtx, service: BetterSidebarServiceLike): void {
+  ctx.effect(() => service.registerTab(createBetterSidebarDescriptor(
+    BetterSidebarWorkbenchTab,
+    (size: number) => createElement(WorkbenchGlyph, { size }),
+  )))
+}
+
+function BetterSidebarWorkbenchTab(props: {
+  ctx: ClientCtx
+  scope: { sessionId: string }
+}): unknown {
+  return createElement(WorkbenchPanel, {
+    sessionId: props.scope.sessionId,
+    inputActions: createConversationInputActions(props.ctx, props.scope.sessionId),
+    collapseSidebar: () => props.ctx.sidebarRight.toggleExpanded(),
+  })
 }
 
 function SettingsPanel(): unknown {

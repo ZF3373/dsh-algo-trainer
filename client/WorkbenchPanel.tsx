@@ -120,6 +120,10 @@ export function HeaderAction({ open }: HeaderActionProps): ReactNode {
   )
 }
 
+export function WorkbenchGlyph({ size = 16 }: { size?: number }): ReactNode {
+  return <Icon name="trophy" size={size} />
+}
+
 function Icon({ name, size = 16 }: { name: FeatureIcon | 'trophy'; size?: number }): ReactNode {
   const common = {
     width: size,

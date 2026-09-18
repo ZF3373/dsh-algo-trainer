@@ -140,6 +140,10 @@ AI 配置也可运行时通过 `icpc_settings` 工具修改（持久化到 JSON�
 “AI 助手”或某个具体功能项后，插件才会把 `icpc_*` 工具注册到该会话对应的
 Agent 作用域，并由 Harness 当前对话执行后续请求。其他会话不受影响。
 
+安装 `dsh-better-sidebar` 后，插件会通过其公开的 `ctx.betterSidebar`
+服务注册 `dsh-algo-trainer:workbench` tab，ICPC 页面由 better-sidebar
+的原生 tab 宿主承载；未安装时自动回退到 DSH 原生右侧栏。
+
 ## 测试
 
 ```bash
