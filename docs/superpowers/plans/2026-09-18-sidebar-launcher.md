@@ -6,7 +6,7 @@
 
 **Architecture:** The client registers one header action and one keyed right-sidebar tab. Feature clicks POST to a Host route, which resolves the current Agent and registers the existing `icpc_*` tools into `agent.ctx`. Nothing is registered globally, so unrelated sessions never see the tools or their prompt schemas.
 
-**Tech Stack:** TypeScript, Cordis, DeepSeek Harness Client Slots, `sidebarRightTabs`, React, Node `node:http`, `lucide-react`, `tsx --test`, tsdown.
+**Tech Stack:** TypeScript, Cordis, DeepSeek Harness Client Slots, `sidebarRightTabs`, React, Node `node:http`, inline SVG glyphs, `tsx --test`, tsdown.
 
 **Spec:** `docs/superpowers/specs/2026-09-18-sidebar-launcher-design.md`
 
@@ -867,7 +867,6 @@ git commit -m "feat: define ICPC workbench feature catalog"
 - Modify: `client/index.ts`
 - Modify: `package.json`
 - Modify: `tsdown.config.ts`
-- Modify: `package-lock.json`
 
 **Interfaces:**
 - Consumes: `WORKBENCH_FEATURES`, `FEATURE_GROUPS`, `featurePrompt`.
@@ -914,22 +913,6 @@ Create `client/WorkbenchPanel.tsx`:
 
 ```tsx
 import { useState, type ReactNode } from 'react'
-import type { LucideIcon } from 'lucide-react'
-import {
-  Activity,
-  BarChart3,
-  Bot,
-  CalendarCheck,
-  Code2,
-  FileInput,
-  FileOutput,
-  Flag,
-  ListChecks,
-  RefreshCw,
-  Settings,
-  Target,
-  Trophy,
-} from 'lucide-react'
 import { activateWorkbench } from './api.ts'
 import {
   FEATURE_GROUPS,
@@ -938,22 +921,6 @@ import {
   type FeatureIcon,
   type WorkbenchFeature,
 } from './features.ts'
-
-const ICONS: Record<FeatureIcon, LucideIcon> = {
-  assistant: Bot,
-  overview: BarChart3,
-  today: Target,
-  plans: ListChecks,
-  reviews: Activity,
-  templates: Code2,
-  problems: FileInput,
-  sync: RefreshCw,
-  import: FileInput,
-  export: FileOutput,
-  checkins: CalendarCheck,
-  contests: Trophy,
-  settings: Settings,
-}
 
 export interface InputActions {
   setDraft(text: string): void
@@ -1031,7 +998,7 @@ export function WorkbenchPanel({
                     disabled={busy !== null}
                     onClick={() => void runFeature(feature)}
                   >
-                    <span className="icpc-workbench__icon"><Icon size={17} aria-hidden="true" /></span>
+                  <span className="icpc-workbench__icon"><Icon name={feature.icon} size={17} /></span>
                     <span className="icpc-workbench__copy">
                       <span className="icpc-workbench__label">{feature.label}</span>
                       <span className="icpc-workbench__description">{feature.description}</span>
@@ -1063,7 +1030,7 @@ export function HeaderAction({ open }: HeaderActionProps): ReactNode {
       aria-label="打开 ICPC Workbench"
       onClick={open}
     >
-      <Trophy size={16} aria-hidden="true" />
+      <Icon name="trophy" size={16} />
     </button>
   )
 }
@@ -1206,6 +1173,10 @@ const PANEL_CSS = `
 `
 ```
 
+Implement `Icon` as a small internal SVG component switching on the feature icon
+name. Do not add `lucide-react`; the plugin must build without fetching a new
+runtime dependency.
+
 - [ ] **Step 3: Rewrite `client/index.ts` registrations**
 
 Use these exports and registration calls:
@@ -1291,15 +1262,7 @@ export function apply(ctx: ClientCtx): void {
 Keep the existing `SettingsPanel` and `getReact` implementation below this
 code unchanged.
 
-- [ ] **Step 4: Update client dependencies and externalization**
-
-In `package.json`, add:
-
-```json
-"dependencies": {
-  "lucide-react": "^0.468.0"
-}
-```
+- [ ] **Step 4: Update client manifest and externalization**
 
 Change the DSH client manifest:
 
@@ -1328,12 +1291,11 @@ neverBundle: [
 ],
 ```
 
-- [ ] **Step 5: Install dependencies and run client checks**
+- [ ] **Step 5: Run client checks**
 
 Run:
 
 ```bash
-npm install
 npm run typecheck:client
 npm test
 npm run build
@@ -1354,7 +1316,7 @@ Expected: the file contains every pattern.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add client package.json package-lock.json tsdown.config.ts
+git add client package.json tsdown.config.ts
 git commit -m "feat: add ICPC workbench sidebar"
 ```
 

@@ -15,6 +15,9 @@ export default defineConfig({
       '@deepseek-ai/cordis',
       '@deepseek-ai/dsh-tools',
       '@deepseek-ai/schemastery',
+      'react',
+      'react-dom',
+      'react/jsx-runtime',
     ],
   },
 })
