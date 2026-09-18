@@ -85,7 +85,7 @@ The host half no longer registers `icpc_*` tools globally during plugin load.
 Instead it builds one reusable registration function:
 
 ```ts
-registerIcpcTools(targetCtx, host): () => void
+registerIcpcTools(host, targetCtx): () => void
 ```
 
 The function registers the existing tools into the supplied Cordis context and
