@@ -79,8 +79,32 @@ export interface RpcService {
   call: (method: string, params?: unknown) => Promise<unknown>
 }
 
+export interface AgentLike {
+  id: string
+  ctx: Context
+}
+
+export interface AgentsService {
+  get(id: string): AgentLike | undefined
+}
+
+export interface WebRoute {
+  kind: 'exact' | 'prefix'
+  path: string
+  handler: (
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
+  ) => void | Promise<void>
+}
+
+export interface WebServerService {
+  register(route: WebRoute): () => void
+}
+
 export interface Context {
   tools: ToolsService
+  agents?: AgentsService
+  webServer?: WebServerService
   fs?: FsService
   rpc?: RpcService
   effect: (fn: () => void | (() => void)) => void
