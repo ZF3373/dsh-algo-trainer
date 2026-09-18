@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import type { AgentLike, Context } from '../src/dsh-compat.ts'
 import type { IcpcHost } from '../src/index.ts'
 import {
@@ -91,5 +92,14 @@ describe('createSessionActivator', () => {
 
     listeners[0]?.({ agent })
     assert.equal(disposed.length, 13)
+  })
+})
+
+describe('host plugin wiring', () => {
+  it('does not register training tools globally in apply', async () => {
+    const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8')
+    assert.match(source, /registerActivationRoute\(ctx, host\)/)
+    assert.doesNotMatch(source, /registerSyncTool\(host, ctx\)/)
+    assert.doesNotMatch(source, /registerStatsTool\(host, ctx\)/)
   })
 })

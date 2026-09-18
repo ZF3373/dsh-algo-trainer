@@ -1,7 +1,7 @@
 /**
  * dsh-algo-trainer — 算法学习训练插件 for DeepSeek Harness
  *
- * Host 半边：注册 14 个 agent tools。
+ * Host 半边：按会话激活 13 个 agent tools。
  * 数据层用 JSON 文件持久化（替代 SQLite），通过 Node fs 落盘到 DSH_HOME/.icpc-data。
  * 适配层用 fetch 调公开 API（Codeforces + AtCoder）。
  *
@@ -18,21 +18,10 @@ import { IcpcStore } from './store/index.ts'
 import { createCodeforcesAdapter } from './adapters/codeforces.ts'
 import { createAtcoderAdapter } from './adapters/atcoder.ts'
 import type { PlatformAdapter, ContestAdapter } from './adapters/types.ts'
-import { registerSyncTool } from './tools/sync.ts'
-import { registerStatsTool } from './tools/stats.ts'
-import { registerTodayTool } from './tools/today.ts'
-import { registerPlanTools } from './tools/plans.ts'
-import { registerReviewTool } from './tools/reviews.ts'
-import { registerTemplateTool } from './tools/templates.ts'
-import { registerContestTool } from './tools/contests.ts'
-import { registerCheckinTool } from './tools/checkins.ts'
-import { registerSettingsTool } from './tools/settings.ts'
-import { registerImportTool } from './tools/import.ts'
-import { registerProblemTool } from './tools/problems.ts'
-import { registerExportTool } from './tools/export.ts'
+import { registerActivationRoute } from './activation.ts'
 
 export const name = 'dsh-algo-trainer'
-export const inject = ['tools']
+export const inject = ['tools', 'agents', 'webServer']
 export { Config }
 
 export interface IcpcHost {
@@ -96,17 +85,5 @@ export function apply(ctx: Context, rawConfig: Partial<PluginConfig> = {}): void
 
   ctx.effect(() => () => { void store.flush() })
 
-  // 注册 agent tools（14 个）
-  registerSyncTool(host, ctx)
-  registerStatsTool(host, ctx)
-  registerTodayTool(host, ctx)
-  registerPlanTools(host, ctx)
-  registerReviewTool(host, ctx)
-  registerTemplateTool(host, ctx)
-  registerContestTool(host, ctx)
-  registerCheckinTool(host, ctx)
-  registerSettingsTool(host, ctx)
-  registerImportTool(host, ctx)
-  registerProblemTool(host, ctx)
-  registerExportTool(host, ctx)
+  registerActivationRoute(ctx, host)
 }
