@@ -4,6 +4,13 @@ import type { Context, ToolDefinition } from '../dsh-compat.ts'
 import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT } from './helpers.ts'
 
+/** 脱敏：保留首尾，中间打码（短值整体打码） */
+function maskSecret(v: string | undefined): string | undefined {
+  if (!v) return v
+  if (v.length <= 8) return '****'
+  return `${v.slice(0, 4)}****${v.slice(-4)}`
+}
+
 export function registerSettingsTool(host: IcpcHost, ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'icpc_settings',
@@ -34,8 +41,25 @@ export function registerSettingsTool(host: IcpcHost, ctx: Context): void {
       const action = args.action as string
 
       switch (action) {
-        case 'get':
-          return { ok: true, settings: store.getSettings() }
+        case 'get': {
+          // 脱敏输出：apiKey / cookie 不向模型暴露明文
+          const s = store.getSettings()
+          return {
+            ok: true,
+            settings: {
+              accounts: s.accounts,
+              adapterEnabled: s.adapterEnabled,
+              reminder: s.reminder,
+              ai: { ...s.ai, apiKey: maskSecret(s.ai.apiKey) },
+              cookies: Object.fromEntries(
+                Object.entries(s.cookies).map(([pf, v]) => [
+                  pf,
+                  v ? { cookie: maskSecret(v.cookie), csrf: maskSecret(v.csrf) } : v,
+                ]),
+              ),
+            },
+          }
+        }
 
         case 'set_account': {
           const platform = args.platform as PlatformId

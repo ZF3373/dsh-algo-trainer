@@ -7,6 +7,15 @@ import { parseCsvRows } from '../import/csv.ts'
 
 const VERDICTS: readonly Verdict[] = ['AC', 'WA', 'TLE', 'RE', 'MLE', 'CE', 'SKIPPED']
 
+/** 解析提交时间；无效值回退为当前时间，避免 RangeError 抛给调用方 */
+function parseDateSafe(v: string | undefined): string {
+  if (v) {
+    const t = Date.parse(v)
+    if (Number.isFinite(t)) return new Date(t).toISOString()
+  }
+  return new Date().toISOString()
+}
+
 interface ManualRow {
   problemKey: string
   title?: string
@@ -78,14 +87,15 @@ export function registerImportTool(host: IcpcHost, ctx: Context): void {
         const tags = Array.isArray(r.tags)
           ? r.tags.map(String).filter(Boolean)
           : typeof r.tags === 'string' ? r.tags.split('|').map((t) => t.trim()).filter(Boolean) : []
-        const externalId = r.externalId ?? `manual:${platform}:${problemKey}:${verdictRaw}`
+        // 同题同 verdict 的多条提交也要各自保留：externalId 追加序号与时间戳，避免被去重合并
+        const externalId = r.externalId ?? `manual:${platform}:${problemKey}:${verdictRaw}:${Date.now()}:${i}`
         const difficulty = r.difficulty !== undefined ? Number(r.difficulty) : NaN
         return {
           platform,
           problemKey,
           verdict: verdictRaw as Verdict,
           language: r.language?.trim() || undefined,
-          submittedAt: r.submittedAt ? new Date(r.submittedAt).toISOString() : new Date().toISOString(),
+          submittedAt: parseDateSafe(r.submittedAt),
           externalId,
           title: r.title?.trim() || problemKey,
           difficulty: Number.isFinite(difficulty) ? difficulty : null,

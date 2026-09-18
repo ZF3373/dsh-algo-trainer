@@ -4,6 +4,24 @@ import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT, num } from './helpers.ts'
 import type { ContestInfo, PlatformId } from '../types.ts'
 
+/** 赛事列表 TTL 缓存：CF contest.list / AtCoder contests.json 都是全量数据，避免每次查询都拉一遍 */
+const CONTEST_CACHE_TTL_MS = 10 * 60 * 1000
+const contestCache = new Map<string, { at: number; data: ContestInfo[] }>()
+
+async function fetchContestsCached(
+  host: IcpcHost,
+  pf: PlatformId,
+): Promise<ContestInfo[]> {
+  const now = Date.now()
+  const hit = contestCache.get(pf)
+  if (hit && now - hit.at < CONTEST_CACHE_TTL_MS) return hit.data
+  const adapter = host.adapters[pf]
+  if (!adapter) return []
+  const data = await adapter.fetchContests()
+  contestCache.set(pf, { at: now, data })
+  return data
+}
+
 export function contestPhase(c: { startTimeIso: string | null; durationMinutes: number }, now = Date.now()): 'upcoming' | 'running' | 'finished' | null {
   if (!c.startTimeIso) return null
   const start = new Date(c.startTimeIso).getTime()
@@ -37,9 +55,7 @@ export function registerContestTool(host: IcpcHost, ctx: Context): void {
 
       for (const pf of sources) {
         try {
-          const adapter = host.adapters[pf]
-          if (!adapter) continue
-          const contests = await adapter.fetchContests()
+          const contests = await fetchContestsCached(host, pf)
           all.push(...contests)
         } catch (e) {
           failures[pf] = (e as Error).message

@@ -10,12 +10,17 @@
 
 | 层 | 原项目 | 本插件 |
 |---|---|---|
-| 数据持久化 | SQLite (node:sqlite) | JSON 文件（通过 dsh `fs` 服务落盘到 workspace 目录） |
-| 网络请求 | Node `fetch` | dsh `web.fetch` / 全局 `fetch` |
+| 数据持久化 | SQLite (node:sqlite) | JSON 文件（node:fs 落盘到 DSH_HOME/.icpc-data/） |
+| 网络请求 | Node `fetch` | 全局 `fetch`（Host 进程内可用） |
 | 适配范围 | CF + AtCoder + 洛谷 + 牛客 | **CF + AtCoder**（洛谷/牛客需 Cookie/反爬，首版不支持） |
-| Agent 接口 | Express REST 路由 | dsh `ctx.tools.register()`（10 个 `icpc_` 前缀工具） |
-| 前端 | React SPA | dsh Slot UI 面板（紧凑仪表盘） |
+| Agent 接口 | Express REST 路由 | dsh `ctx.tools.register()`（13 个 `icpc_` 前缀工具） |
+| 前端 | React SPA | dsh Slot UI 面板（设置页引导面板） |
 | 分析引擎 | 依赖 DB 的函数 | **纯函数**（输入 `SubmissionRow[]`，无 IO 依赖） |
+
+> 说明：`ctx.fs`（dsh fs 服务）的接口是 `resolve/readText/writeText/stat` 风格，
+> 与本插件假设的 `readFile/writeFile/mkdir` 不兼容，且 host 侧不存在 `rpc` 服务。
+> 因此数据层统一使用 node:fs（文件插件运行在 Host Node 进程中，可靠且已验证），
+> client 半边为静态引导面板，不做 client→host RPC。
 
 ## 目录结构
 
@@ -25,10 +30,12 @@ dsh-algo-trainer/
 ├── tsconfig.json             # host 侧 tsconfig
 ├── tsconfig.client.json      # client 侧 tsconfig
 ├── cordis.patch.yml          # dsh 配置补丁行
+├── scripts/
+│   └── wrap-client.mjs       # 将 ESM client bundle 包装为 __ModuleLoader__ 格式
 ├── README.md
 ├── src/                      # Host 半边
-│   ├── index.ts              # 插件入口：apply(ctx, config) — store 初始化 + 工具/RPC 注册
-│   ├── dsh-compat.ts         # dsh 类型兼容层（Context / ToolDefinition / FsService / RpcService / Config）
+│   ├── index.ts              # 插件入口：apply(ctx, config) — store 初始化 + 13 工具注册
+│   ├── dsh-compat.ts         # dsh 类型兼容层（Context / ToolDefinition / FsService / Config）
 │   ├── types.ts              # 跨模块共享类型（PlatformId / Verdict / WeaknessProfile / TodayPlan / ...）
 │   ├── store/
 │   │   ├── schema.ts         # JSON 数据模型（ProblemRecord / SubmissionRecord / PlanRecord / ...）
@@ -50,7 +57,7 @@ dsh-algo-trainer/
 │   ├── templates/
 │   │   ├── curriculum.ts     # 114 课算法模板大纲（数据文件）
 │   │   └── progress.ts       # 学习进度管理（todo/learning/mastered + 下一课推荐）
-│   ├── tools/                # 10 个 agent 工具
+│   ├── tools/                # 13 个 agent 工具
 │   │   ├── helpers.ts        # textOutput / num / str 辅助
 │   │   ├── sync.ts           # icpc_sync — 同步刷题记录
 │   │   ├── stats.ts          # icpc_stats — 统计分析
@@ -61,11 +68,11 @@ dsh-algo-trainer/
 │   │   ├── contests.ts       # icpc_contests — 赛事中心
 │   │   ├── checkins.ts       # icpc_checkin — 日历打卡
 │   │   ├── settings.ts       # icpc_settings — 设置
-│   │   └── import.ts         # icpc_import — 手动导入
-│   └── rpc/
-│       └── index.ts          # Host RPC bridge（icpc.dashboard / icpc.trend / icpc.contests）
+│   │   ├── import.ts         # icpc_import — 手动导入
+│   │   ├── problems.ts       # icpc_problems — 题目浏览
+│   │   └── export.ts         # icpc_export — 训练计划数据包导出
 ├── client/
-│   └── index.ts              # Client 半边：紧凑仪表盘面板（Slot UI + 文本渲染降级）
+│   └── index.ts              # Client 半边：设置页引导面板（Slot UI）
 └── tests/
     └── analysis.test.ts      # 24 个纯函数测试
 ```
@@ -78,7 +85,7 @@ dsh plugin --profile web add dsh-algo-trainer
 
 # 或从源码
 cd dsh-algo-trainer
-npm install
+npm install        # prepare 钩子会自动构建 lib/
 ```
 
 ## 配置
@@ -89,7 +96,7 @@ npm install
     - id: algo-trainer
       name: 'dsh-algo-trainer'
       config:
-        dataDir: ''           # 数据目录，留空则用 workspace/.icpc-data/
+        dataDir: ''           # 数据目录，留空则用 $DSH_HOME/.icpc-data/
         ai:
           enabled: false
           baseURL: 'https://api.deepseek.com/v1'
@@ -98,8 +105,9 @@ npm install
 ```
 
 AI 配置也可运行时通过 `icpc_settings` 工具修改（持久化到 JSON）。
+注意：`icpc_settings get` 返回的 apiKey / cookie 会脱敏显示。
 
-## Agent 工具
+## Agent 工具（13 个）
 
 | 工具 | 功能 |
 |------|------|
@@ -107,22 +115,21 @@ AI 配置也可运行时通过 `icpc_settings` 工具修改（持久化到 JSON�
 | `icpc_stats` | 统计分析：overall / weakness / trend |
 | `icpc_today` | 今日三档训练推荐（巩固/同段/挑战，弱项优先） |
 | `icpc_generate_plan` | AI 生成训练计划（无 key 降级模板） |
-| `icpc_manage_plan` | 计划管理：list/detail/checkin/uncheck/delete/import |
+| `icpc_manage_plan` | 计划管理：list/detail/checkin/uncheck/delete/import/update_task/delete_task |
 | `icpc_review` | 间隔复习库：list/add/feedback/remove |
-| `icpc_templates` | 114 课模板库：browse/next/set_status |
+| `icpc_templates` | 114 课模板库：browse/next/set_status/set_content/自建/例题 |
 | `icpc_contests` | 多平台赛事（CF+AtCoder 聚合） |
 | `icpc_checkin` | 日历打卡：streak/month/date/checkin/uncheck |
-| `icpc_settings` | 设置：get/set_account/set_ai |
-| `icpc_import` | 手动导入刷题记录（JSON） |
+| `icpc_settings` | 设置：get/set_account/set_ai/set_adapter/set_cookies/set_reminder |
+| `icpc_import` | 手动导入刷题记录（JSON/CSV） |
+| `icpc_problems` | 浏览/搜索题目库（platform/difficulty/tag/q/bank） |
+| `icpc_export` | 导出 AI 训练计划数据包（plan_package/plan_prompt） |
 
 ## Client 面板
 
-紧凑仪表盘面板通过 `rpc.call('icpc.dashboard')` 拉取一次聚合数据，展示：
-- 总体统计（提交/AC/AC率/解题数）
-- 能力值 + 连续打卡 + 到期复习
-- 今日三档训练推荐题单
-- 弱项 Top5
-- 今日任务清单与打卡状态
+设置页中注册「算法训练台」引导面板（`settings.section`），列出全部工具与使用方式。
+由于文件插件没有 client→host RPC 通道（host 侧无 `rpc` 服务），面板为静态内容，
+数据读写一律通过 `icpc_*` 工具在对话中完成。
 
 ## 测试
 
@@ -135,6 +142,7 @@ npx tsx --test tests/**/*.test.ts
 ## dsh 插件契约
 
 - **`name`**: `'dsh-algo-trainer'`
-- **`inject`**: `['tools', 'fs', 'rpc']` — 等待三个 dsh 服务就绪后挂载
-- **`apply(ctx, config)`**: 加载 JSON 存储 → 初始化 CF/AtCoder 适配器 → 注册 10 个工具 + 3 个 RPC 方法 → `ctx.effect()` 注册 dispose 落盘
-- **`Config`**: Schemastery 兼容 schema（dataDir / ai）
+- **`inject`**: `['tools']` — 只依赖 dsh tools 服务；fs 接口不兼容、rpc 服务不存在，故均不注入
+- **`apply(ctx, config)`**: 加载 JSON 存储（load 完成后工具才可安全读写）→ 初始化 CF/AtCoder 适配器 → 注册 13 个工具 → `ctx.effect()` 注册 dispose 落盘
+- **`Config`**: 结构兼容的配置 schema（dataDir / ai）
+- **`dsh.client`**: `{ platform: 'web' }` — client 半边由构建后的 `lib/client.mjs`（`__ModuleLoader__` 包装）提供

@@ -179,12 +179,10 @@ export function recommendProblemsByWeakTag(
   const toCandidate = (p: ProblemRecord): Candidate => {
     const key = `${p.platform}:${p.problemKey}`
     const isAc = acKeys.has(key)
-    // 查最后 AC 时间
+    // 用索引查最后 AC 时间（O(1) 查找，不扫全量提交）
     let lastAcAt: string | null = null
-    for (const s of store.getSubmissionRows()) {
-      if (s.platform === p.platform && s.problemKey === p.problemKey && s.verdict === 'AC') {
-        if (!lastAcAt || s.submittedAt > lastAcAt) lastAcAt = s.submittedAt
-      }
+    for (const s of store.getSubmissionsForProblem(p.platform, p.problemKey)) {
+      if (s.verdict === 'AC' && (!lastAcAt || s.submittedAt > lastAcAt)) lastAcAt = s.submittedAt
     }
     return {
       platform: p.platform,
@@ -480,7 +478,7 @@ export async function generatePlan(
   store: IcpcStore,
   aiConfig: { enabled: boolean; baseURL: string; apiKey: string; model: string },
   opts: { days?: number; startDate?: string } = {},
-): Promise<{ planId: number; source: 'ai' | 'template'; title: string }> {
+): Promise<{ planId: number; source: 'ai' | 'template'; title: string; degradedReason?: string }> {
   const days = opts.days ?? 14
   const startDate = opts.startDate ?? today()
   const pkg = buildPlanPackage(store, { days, startDate })
@@ -534,5 +532,7 @@ export async function generatePlan(
       checked: false,
     })),
   })
-  return { planId: plan.id, source: 'template', title: tpl.title }
+  // 若 AI 已启用但失败，向调用方说明降级原因（区别于用户主动未配置 AI）
+  const degradedReason = aiConfig.enabled && aiConfig.apiKey.trim() ? 'AI 生成失败，已降级为模板计划' : undefined
+  return { planId: plan.id, source: 'template', title: tpl.title, degradedReason }
 }

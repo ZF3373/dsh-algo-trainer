@@ -105,15 +105,23 @@ export function createAtcoderAdapter(
 
         let added = 0
         let maxSecond = 0
+        let maxSecondCount = 0
         for (const s of rows) {
           if (seen.has(String(s.id))) continue
           seen.add(String(s.id))
           raws.push(s)
           added += 1
-          if (s.epoch_second > maxSecond) maxSecond = s.epoch_second
+          if (s.epoch_second > maxSecond) {
+            maxSecond = s.epoch_second
+            maxSecondCount = 1
+          } else if (s.epoch_second === maxSecond) {
+            maxSecondCount += 1
+          }
         }
         if (rows.length < SUBMISSION_PAGE || added === 0) break
-        fromSecond = maxSecond
+        // 游标前进规则：仅当本页末尾那一秒的提交数没有达到整页容量时才 +1；
+        // 若该秒提交数 >= 一页容量（可能被截断），保持该秒值，下一轮靠 seen 去重继续拉取，避免丢提交
+        fromSecond = maxSecondCount < SUBMISSION_PAGE ? maxSecond + 1 : maxSecond
         await sleep(1000)
       }
 

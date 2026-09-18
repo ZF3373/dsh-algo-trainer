@@ -9,6 +9,9 @@ import { syncPlatform } from '../tools/sync-helpers.ts'
 
 const customId = (dbId: number): string => `c-${dbId}`
 
+/** 已接入同步适配器的平台（洛谷/牛客未接入，模板库中仍保留其例题数据但不参与同步） */
+const SUPPORTED_PLATFORMS = ['codeforces', 'atcoder'] as const
+
 export function registerTemplateTool(host: IcpcHost, ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'icpc_templates',
@@ -80,10 +83,17 @@ export function registerTemplateTool(host: IcpcHost, ctx: Context): void {
                 templates: [
                   ...cat.templates.map((t) => ({
                     custom: false, ...t,
-                    examples: t.examples.map((ex) => ({
-                      ...ex,
-                      ...(exampleStatus.get(`${ex.platform}:${ex.key}`) ?? { inBank: false, ac: false }),
-                    })),
+                    examples: t.examples.map((ex) => {
+                      const supported = (SUPPORTED_PLATFORMS as readonly string[]).includes(ex.platform)
+                      return {
+                        ...ex,
+                        // 洛谷等未接入平台：明确标注 supported=false，避免误导为"未入库"
+                        supported,
+                        ...(supported
+                          ? (exampleStatus.get(`${ex.platform}:${ex.key}`) ?? { inBank: false, ac: false })
+                          : { inBank: false, ac: false }),
+                      }
+                    }),
                     status: progress.get(t.id)?.status ?? 'todo',
                     note: progress.get(t.id)?.note ?? null,
                     content: progress.get(t.id)?.code != null
@@ -201,13 +211,18 @@ export function registerTemplateTool(host: IcpcHost, ctx: Context): void {
           const item = CURRICULUM.flatMap((cat) => cat.templates).find((t) => t.id === templateId)
           if (!item || item.examples.length === 0) return { ok: false, error: `模板 ${templateId} 不存在或没有例题` }
           const results = []
-          for (const platform of new Set(item.examples.map((ex) => ex.platform as PlatformId))) {
-            const account = store.getAccount(platform)
+          for (const platform of new Set(item.examples.map((ex) => ex.platform))) {
+            // 洛谷等未接入平台：明确报错而不是把 'luogu' 强转成 PlatformId 传错适配器
+            if (!(SUPPORTED_PLATFORMS as readonly string[]).includes(platform)) {
+              results.push({ platform, handle: null, imported: 0, skipped: 0, errors: [`平台 ${platform} 未接入同步（仅支持 CF/AtCoder）`] })
+              continue
+            }
+            const account = store.getAccount(platform as PlatformId)
             if (!account?.handle) {
               results.push({ platform, handle: null, imported: 0, skipped: 0, errors: [`未绑定 ${platform} 账号`] })
               continue
             }
-            const r = await syncPlatform(host, platform, account.handle)
+            const r = await syncPlatform(host, platform as PlatformId, account.handle)
             results.push({ ...r, handle: account.handle })
           }
           return { ok: true, results }

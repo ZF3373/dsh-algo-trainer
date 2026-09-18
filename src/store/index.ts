@@ -17,6 +17,10 @@ import type {
   StoreState,
 } from './schema.ts'
 import { defaultState } from './schema.ts'
+// 难度分桶统一由 analysis/stats 提供，避免重复定义
+import { bucketForDifficulty } from '../analysis/stats.ts'
+
+export { bucketForDifficulty }
 
 const STATE_FILE = 'icpc-state.json'
 const SAVE_DEBOUNCE_MS = 500
@@ -45,10 +49,43 @@ export class IcpcStore {
   private nextReviewId = 1
   private nextTaskId = 1
   private nextCustomId = 1
+  /** 提交索引：`${platform}:${problemKey}` → SubmissionRecord[]，避免 O(n×m) 全量扫描 */
+  private subIndex: Map<string, SubmissionRecord[]> = new Map()
+  /** 排序后的提交缓存（按时间降序），插入时追加、读取时直接用 */
+  private sortedSubs: SubmissionRecord[] | null = null
+  /** load() 完成信号：任何写盘（flush）必须等它，避免用空 state 覆盖磁盘上的真实数据 */
+  private ready: Promise<void> = Promise.resolve()
+  private loaded = false
 
   constructor(fs: FsService, dataDir: string) {
     this.fs = fs
     this.dataDir = dataDir
+    this.ready = this.load()
+  }
+
+  /** 等待存储加载完成（首次调用前 await，避免读到空状态或写盘覆盖） */
+  awaitReady(): Promise<void> {
+    return this.ready
+  }
+
+  /** 重建提交索引（load 后或批量插入后调用） */
+  private rebuildSubIndex(): void {
+    this.subIndex = new Map()
+    for (const s of this.state.submissions) {
+      const key = `${s.platform}:${s.problemKey}`
+      const arr = this.subIndex.get(key) ?? []
+      arr.push(s)
+      this.subIndex.set(key, arr)
+    }
+    this.sortedSubs = null
+  }
+
+  /** 获取按时间降序排序的提交（缓存） */
+  private getSortedSubs(): SubmissionRecord[] {
+    if (!this.sortedSubs) {
+      this.sortedSubs = [...this.state.submissions].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    }
+    return this.sortedSubs
   }
 
   async load(): Promise<void> {
@@ -80,6 +117,8 @@ export class IcpcStore {
     for (const c of this.state.customTemplates) {
       if (c.id >= this.nextCustomId) this.nextCustomId = c.id + 1
     }
+    this.rebuildSubIndex()
+    this.loaded = true
   }
 
   scheduleSave(): void {
@@ -88,6 +127,8 @@ export class IcpcStore {
   }
 
   async flush(): Promise<void> {
+    // 必须先等 load 完成：否则会用默认空 state 覆盖磁盘上的真实数据
+    await this.ready
     try {
       await this.fs.mkdir(this.dataDir)
       await this.fs.writeFile(`${this.dataDir}/${STATE_FILE}`, JSON.stringify(this.state, null, 2))
@@ -238,21 +279,21 @@ export class IcpcStore {
     bank?: boolean
     limit?: number
   } = {}): Array<ProblemRecord & { attempts: number; acCount: number; lastAcAt: string | null; status: string }> {
-    const acKeys = this.getAcKeys()
     const limit = opts.limit ?? 300
     let rows = this.state.problems
       .map((p) => {
-        const subs = this.state.submissions.filter(
-          (s) => s.platform === p.platform && s.problemKey === p.problemKey,
-        )
-        const acCount = subs.filter((s) => s.verdict === 'AC').length
-        const lastAcAt = subs.filter((s) => s.verdict === 'AC').map((s) => s.submittedAt).sort().pop() ?? null
+        // 用索引查提交，避免全量扫描
+        const subs = this.subIndex.get(`${p.platform}:${p.problemKey}`) ?? []
+        const acSubs = subs.filter((s) => s.verdict === 'AC')
+        const lastAcAt = acSubs.length > 0
+          ? acSubs.map((s) => s.submittedAt).sort().pop() ?? null
+          : null
         return {
           ...p,
           attempts: subs.length,
-          acCount,
+          acCount: acSubs.length,
           lastAcAt,
-          status: acCount > 0 ? 'ac' : subs.length > 0 ? 'tried' : 'none',
+          status: acSubs.length > 0 ? 'ac' : subs.length > 0 ? 'tried' : 'none',
         }
       })
     if (!opts.bank) {
@@ -288,16 +329,26 @@ export class IcpcStore {
       }
       existing.add(s.externalId)
       this.state.submissions.push(s)
-      this.upsertProblem({
-        platform: s.platform,
-        problemKey: s.problemKey,
-        title: s.problemKey,
-        difficulty: null,
-        url: null,
-        tags: [],
-      })
+      // 维护提交索引
+      const key = `${s.platform}:${s.problemKey}`
+      const arr = this.subIndex.get(key) ?? []
+      arr.push(s)
+      this.subIndex.set(key, arr)
+      // 仅在题目不存在时创建占位记录（不覆盖已有题目的标题/难度/标签）
+      if (!this.findProblem(s.platform, s.problemKey)) {
+        this.state.problems.push({
+          platform: s.platform,
+          problemKey: s.problemKey,
+          title: s.problemKey,
+          difficulty: null,
+          url: null,
+          tags: [],
+        })
+        this.scheduleSave()
+      }
       imported++
     }
+    this.sortedSubs = null  // 使排序缓存失效
     this.scheduleSave()
     return { imported, skipped }
   }
@@ -334,6 +385,11 @@ export class IcpcStore {
       })
   }
 
+  /** 获取某道题的提交记录（用索引，O(1) 查找） */
+  getSubmissionsForProblem(platform: PlatformId, problemKey: string): SubmissionRecord[] {
+    return this.subIndex.get(`${platform}:${problemKey}`) ?? []
+  }
+
   getAcKeys(): Set<string> {
     const set = new Set<string>()
     for (const s of this.state.submissions) {
@@ -343,13 +399,12 @@ export class IcpcStore {
   }
 
   getRecentAcDifficulties(since: string): number[] {
-    const acKeys = this.getAcKeys()
     const problemMap = new Map(
       this.state.problems.map((p) => [`${p.platform}:${p.problemKey}`, p]),
     )
     const diffs: number[] = []
     const seen = new Set<string>()
-    for (const s of [...this.state.submissions].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))) {
+    for (const s of this.getSortedSubs()) {
       if (s.verdict !== 'AC' || s.submittedAt < since) continue
       const key = `${s.platform}:${s.problemKey}`
       if (seen.has(key)) continue
@@ -633,16 +688,4 @@ export class IcpcStore {
     }
     return map
   }
-}
-
-// ---------- Helpers (also used by analysis) ----------
-
-export function bucketForDifficulty(difficulty: number | null | undefined): string {
-  if (difficulty === null || difficulty === undefined || !Number.isFinite(difficulty)) return '未知'
-  const bounds = [1200, 1400, 1600, 1900, 2200]
-  const labels = ['<1200', '1200-1399', '1400-1599', '1600-1899', '1900-2199', '2200+']
-  for (let i = 0; i < bounds.length; i++) {
-    if (difficulty < bounds[i]) return labels[i]
-  }
-  return labels[labels.length - 1]
 }

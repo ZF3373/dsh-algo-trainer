@@ -64,7 +64,7 @@ export function registerReviewTool(host: IcpcHost, ctx: Context): void {
         case 'remove': {
           const id = Number(args.id)
           if (!Number.isInteger(id)) return { ok: false, error: 'id 必填' }
-          store.deleteReview(id)
+          if (!store.deleteReview(id)) return { ok: false, error: '复习条目不存在' }
           return { ok: true }
         }
 

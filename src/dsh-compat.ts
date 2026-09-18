@@ -81,8 +81,8 @@ export interface RpcService {
 
 export interface Context {
   tools: ToolsService
-  fs: FsService
-  rpc: RpcService
+  fs?: FsService
+  rpc?: RpcService
   effect: (fn: () => void | (() => void)) => void
   on: (event: string, handler: (...args: unknown[]) => unknown) => () => void
   emit: (event: string, ...args: unknown[]) => void
