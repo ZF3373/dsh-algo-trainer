@@ -11,8 +11,8 @@ function maskSecret(v: string | undefined): string | undefined {
   return `${v.slice(0, 4)}****${v.slice(-4)}`
 }
 
-export function registerSettingsTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerSettingsTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_settings',
     description:
       '管理设置。action=get 获取全部设置（AI/账号/适配器开关/Cookie/提醒）；' +

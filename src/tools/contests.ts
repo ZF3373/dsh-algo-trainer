@@ -31,8 +31,8 @@ export function contestPhase(c: { startTimeIso: string | null; durationMinutes: 
   return 'finished'
 }
 
-export function registerContestTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerContestTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_contests',
     description:
       '查询多平台赛事列表。聚合 Codeforces / AtCoder 公开赛事。' +

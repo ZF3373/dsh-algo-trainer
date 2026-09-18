@@ -28,8 +28,8 @@ interface ManualRow {
   externalId?: string
 }
 
-export function registerImportTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerImportTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_import',
     description:
       '手动导入刷题记录。action=manual 用 JSON 数组导入；action=csv 用 CSV 文本导入。' +

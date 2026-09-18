@@ -5,8 +5,8 @@ import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT } from './helpers.ts'
 import { syncPlatform } from './sync-helpers.ts'
 
-export function registerSyncTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerSyncTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_sync',
     description:
       '同步 OJ 平台刷题记录。platform=all 同步所有已绑定账号；指定平台时需提供 handle 或使用已绑定账号。' +

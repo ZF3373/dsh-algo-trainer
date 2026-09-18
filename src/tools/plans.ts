@@ -5,8 +5,8 @@ import { textOutput, ANY_OUTPUT, num, str } from './helpers.ts'
 import { generatePlan, parsePlanJson, today, addDays, TASK_KINDS } from '../plans/planService.ts'
 import type { TaskKind } from '../types.ts'
 
-export function registerPlanTools(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerPlanTools(host: IcpcHost, ctx: Context): () => void {
+  const disposeGenerate = ctx.tools.register(defineTool({
     name: 'icpc_generate_plan',
     description:
       '生成训练计划。基于 AI（需配置 API Key）分析弱项/趋势/水平后生成每日任务；' +
@@ -29,7 +29,7 @@ export function registerPlanTools(host: IcpcHost, ctx: Context): void {
     presentCall: () => ({ card: 'generic', title: '生成训练计划' }),
   }))
 
-  ctx.tools.register(defineTool({
+  const disposeManage = ctx.tools.register(defineTool({
     name: 'icpc_manage_plan',
     description:
       '管理训练计划。action=list 列出所有计划；action=detail 查看计划详情；' +
@@ -155,4 +155,9 @@ export function registerPlanTools(host: IcpcHost, ctx: Context): void {
     },
     presentCall: (args) => ({ card: 'generic', title: `计划：${args.action}` }),
   }))
+
+  return () => {
+    disposeGenerate()
+    disposeManage()
+  }
 }

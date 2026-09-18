@@ -3,8 +3,8 @@ import type { Context, ToolDefinition } from '../dsh-compat.ts'
 import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT, str } from './helpers.ts'
 
-export function registerCheckinTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerCheckinTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_checkin',
     description:
       '管理日历打卡。action=streak 连续打卡统计；action=month 月视图（month=YYYY-MM）；' +

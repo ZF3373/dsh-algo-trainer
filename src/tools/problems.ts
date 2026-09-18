@@ -4,8 +4,8 @@ import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT, str, num } from './helpers.ts'
 import { bucketForDifficulty } from '../store/index.ts'
 
-export function registerProblemTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerProblemTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_problems',
     description:
       '浏览/搜索题目库。支持 platform/difficulty/tag/q 关键词过滤。' +

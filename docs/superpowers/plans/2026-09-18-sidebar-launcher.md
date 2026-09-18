@@ -75,14 +75,14 @@ describe('registerIcpcTools', () => {
 
     const dispose = registerIcpcTools({} as IcpcHost, targetCtx)
 
-    assert.equal(registered.length, 14)
+    assert.equal(registered.length, 13)
     assert.deepEqual(new Set(registered), new Set(ICPC_TOOL_NAMES))
     assert.equal(disposed.length, 0)
     dispose()
-    assert.equal(disposed.length, 14)
+    assert.equal(disposed.length, 13)
     assert.deepEqual(new Set(disposed), new Set(ICPC_TOOL_NAMES))
     dispose()
-    assert.equal(disposed.length, 14)
+    assert.equal(disposed.length, 13)
   })
 })
 ```
@@ -193,7 +193,7 @@ export function registerIcpcTools(host: IcpcHost, targetCtx: Context): () => voi
 ```
 
 Note: `ICPC_TOOL_NAMES` has 13 names because `registerPlanTools` contributes
-two tools, so the test expects 14 registration calls and 13 unique names.
+two tools and the remaining registrars contribute one each.
 
 - [ ] **Step 5: Run the activation registration test**
 
@@ -279,9 +279,9 @@ describe('createSessionActivator', () => {
     const activator = createSessionActivator(ctx, {} as IcpcHost)
 
     assert.deepEqual(activator.activate('session-1').tools, [...ICPC_TOOL_NAMES])
-    assert.equal(registered.length, 14)
+    assert.equal(registered.length, 13)
     activator.activate('session-1')
-    assert.equal(registered.length, 14)
+    assert.equal(registered.length, 13)
   })
 
   it('rejects a missing live agent', () => {
@@ -300,7 +300,7 @@ describe('createSessionActivator', () => {
     activator.activate(agent.id)
 
     listeners[0]?.({ agent })
-    assert.equal(disposed.length, 14)
+    assert.equal(disposed.length, 13)
   })
 })
 ```

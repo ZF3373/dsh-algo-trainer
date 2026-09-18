@@ -4,8 +4,8 @@ import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT, num, str } from './helpers.ts'
 import { buildPlanPackage, today } from '../plans/planService.ts'
 
-export function registerExportTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerExportTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_export',
     description:
       '导出 AI 训练计划数据包。action=plan_package 返回完整数据包（弱项画像/趋势/推荐题/渲染好的提示词）；' +

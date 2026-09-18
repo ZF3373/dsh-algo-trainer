@@ -7,8 +7,8 @@ import { computeOverall } from '../analysis/stats.ts'
 import { computeWeakness } from '../analysis/weakness.ts'
 import { computeTrend } from '../analysis/trend.ts'
 
-export function registerStatsTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerStatsTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_stats',
     description:
       '查询刷题统计。metric=overall 总体统计（尝试/AC/AC率/各平台/各难度/各标签）；' +

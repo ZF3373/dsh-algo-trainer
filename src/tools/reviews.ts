@@ -4,8 +4,8 @@ import { defineTool } from '../dsh-compat.ts'
 import { textOutput, ANY_OUTPUT } from './helpers.ts'
 import { scheduleNext, intervalDaysForStage } from '../reviews/schedule.ts'
 
-export function registerReviewTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerReviewTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_review',
     description:
       '管理间隔复习库。action=list 列出复习队列（due=1 只看到期）；' +

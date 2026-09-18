@@ -12,8 +12,8 @@ const customId = (dbId: number): string => `c-${dbId}`
 /** 已接入同步适配器的平台（洛谷/牛客未接入，模板库中仍保留其例题数据但不参与同步） */
 const SUPPORTED_PLATFORMS = ['codeforces', 'atcoder'] as const
 
-export function registerTemplateTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerTemplateTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_templates',
     description:
       '管理 114 课算法模板库。action=browse 浏览大纲（含进度/自建模板/例题状态/下一课推荐）；' +

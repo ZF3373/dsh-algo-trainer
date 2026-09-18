@@ -9,8 +9,8 @@ import { bandRanges, estimateLevel, pickBand, type CandidateProblem } from '../a
 const DEFAULT_COUNTS: Record<TodayBandKey, number> = { consolidation: 2, core: 3, challenge: 1 }
 const BAND_KEYS: TodayBandKey[] = ['consolidation', 'core', 'challenge']
 
-export function registerTodayTool(host: IcpcHost, ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerTodayTool(host: IcpcHost, ctx: Context): () => void {
+  return ctx.tools.register(defineTool({
     name: 'icpc_today',
     description:
       '获取今日三档训练推荐。系统根据近期 AC 难度中位数估算能力值，' +
