@@ -126,19 +126,18 @@ export interface PluginConfig {
   }
 }
 
+/**
+ * Standard Schema compatible config contract.
+ * Cordis reads only `Config['~standard'].validate()`; keeping the local
+ * implementation avoids a runtime dependency on schemastery in file plugins.
+ */
 export const Config = {
-  dataDir: {
-    type: 'string' as const,
-    description: '数据目录路径（存 JSON 状态文件）；留空则用 workspace 下 .icpc-data/',
-  },
-  ai: {
-    type: 'object' as const,
-    description: 'AI 配置（生成训练计划用）',
-    properties: {
-      enabled: { type: 'boolean' as const, default: false },
-      baseURL: { type: 'string' as const, default: 'https://api.deepseek.com/v1' },
-      apiKey: { type: 'string' as const, default: '' },
-      model: { type: 'string' as const, default: 'deepseek-chat' },
+  '~standard': {
+    version: 1 as const,
+    vendor: 'schemastery',
+    validate(raw: unknown) {
+      const input = raw && typeof raw === 'object' ? raw as Partial<PluginConfig> : {}
+      return { value: resolveConfig(input) }
     },
   },
 }

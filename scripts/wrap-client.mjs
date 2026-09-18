@@ -14,56 +14,36 @@
  *   - 尾部 `export { a, b, c };` → 捕获名字并移除
  *   - 内联 `export const x` / `export function x` → 剥掉 export 关键字并捕获名字
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { build } from 'esbuild'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
+const CLIENT_ENTRY = join(ROOT, 'client', 'index.ts')
 const CLIENT_BUNDLE = join(ROOT, 'lib', 'client.mjs')
 const PLUGIN_ID = 'dsh-algo-trainer'
 
-const src = await readFile(CLIENT_BUNDLE, 'utf8')
-const exported = []
-
-// 1) 尾部集中导出：export { a, b, c };
-let body = src
-  .replace(/\n?\/\/# sourceMappingURL=.*$/m, '')
-  .replace(/export\s*\{([^}]*)\}\s*;?/, (_, list) => {
-    for (const n of list.split(',')) {
-      const t = n.trim()
-      if (t) exported.push(t)
-    }
-    return ''
-  })
-
-// 2) 内联导出：export const x / export function x / export async function x
-body = body
-  .replace(/export\s+(async\s+)?function\s+([A-Za-z_$][\w$]*)/g, (_m, isAsync, fnName) => {
-    exported.push(fnName)
-    return `${isAsync ?? ''}function ${fnName}`
-  })
-  .replace(/export\s+(const|let|var)\s+([A-Za-z_$][\w$]*)/g, (_m, kw, vName) => {
-    exported.push(vName)
-    return `${kw} ${vName}`
-  })
-  .replace(/export\s+default\s+/g, '')
-
-// 3) 只保留顶层确实存在的名字（行首缩进为 0 的声明），防止把局部变量误导出
-const finalNames = [...new Set(exported)].filter((n) =>
-  new RegExp(`(^|\\n)(?:async\\s+)?function\\s+${n}\\s*\\(|(^|\\n)(?:const|let|var)\\s+${n}\\s*=`).test(body),
-)
-if (finalNames.length === 0) throw new Error('wrap-client: 未找到任何可导出的顶层声明')
-
-const assigns = finalNames.map((n) => `exports.${n} = ${n};`).join('\n')
+const result = await build({
+  entryPoints: [CLIENT_ENTRY],
+  bundle: true,
+  format: 'cjs',
+  platform: 'browser',
+  target: 'es2022',
+  jsx: 'automatic',
+  write: false,
+  external: ['react', 'react-dom', 'react/jsx-runtime'],
+})
+const body = result.outputFiles[0]?.text
+if (!body) throw new Error('wrap-client: esbuild produced no client bundle')
 
 const wrapped = `window.__ModuleLoader__.load({ id: ${JSON.stringify(PLUGIN_ID)}, factory: (require) => {
 var module = { exports: {} }; var exports = module.exports;
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 ${body.trimEnd()}
-${assigns}
 return module.exports;
 } });
 `
 
 await writeFile(CLIENT_BUNDLE, wrapped, 'utf8')
-console.log(`wrap-client: ${CLIENT_BUNDLE} wrapped (exports: ${finalNames.join(', ')})`)
+console.log(`wrap-client: ${CLIENT_BUNDLE} wrapped`)
